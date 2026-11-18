@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="gu">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#6d28d9">
+<title>JHALAK — ઝલક</title>
+<style>
+:root{--bg:#09090f;--panel:#151520;--line:#29293a;--purple:#8b5cf6;--text:#f7f5ff;--muted:#aaa7bb}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px system-ui,-apple-system,sans-serif}
+header{position:sticky;top:0;z-index:5;background:#0b0b12ed;border-bottom:1px solid var(--line);padding:13px 16px;display:flex;align-items:center;justify-content:space-between}
+.logo{font-size:24px;font-weight:900;letter-spacing:1px;color:#c4a7ff}.logo small{display:block;font-size:10px;letter-spacing:3px;color:var(--muted)}
+button,.btn{border:0;border-radius:12px;padding:11px 14px;background:var(--purple);color:white;font-weight:700;cursor:pointer}
+button:disabled{opacity:.5}.ghost{background:#242436}.wrap{max-width:620px;margin:auto;padding:14px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:17px;padding:15px;margin:12px 0}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.muted{color:var(--muted)}input,textarea{width:100%;background:#0e0e17;color:white;border:1px solid var(--line);border-radius:11px;padding:12px;margin:7px 0;font:inherit}
+video{width:100%;max-height:65vh;background:#000;border-radius:13px;object-fit:contain}.post{padding:12px 0;border-bottom:1px solid var(--line)}.post:last-child{border:0}
+.hidden{display:none!important}#status{font-size:13px;color:#c4b5fd;margin:8px 0;white-space:pre-wrap}.tabs{display:flex;gap:8px}.tabs button{flex:1}.small{font-size:12px}.avatar{width:36px;height:36px;border-radius:50%;background:#3a245d;display:grid;place-items:center;font-weight:800}
+</style>
+</head>
+<body>
+<header><div class="logo">JHALAK <small>ગુજરાતની પોતાની ઝલક</small></div><button id="signIn">Google થી Login</button><button id="signOut" class="ghost hidden">Logout</button></header>
+<main class="wrap">
+  <div id="status">JHALAK શરૂ થઈ રહ્યું છે…</div>
+  <section id="account" class="card hidden"><div class="row"><div class="avatar" id="avatar">J</div><div><b id="displayName">User</b><div class="muted small" id="email"></div></div></div></section>
+  <section id="uploadCard" class="card hidden">
+    <h3>＋ તમારી Reel અપલોડ કરો</h3>
+    <input id="videoFile" type="file" accept="video/*">
+    <textarea id="caption" rows="2" maxlength="180" placeholder="તમારી Reel વિશે લખો…"></textarea>
+    <button id="uploadBtn">Video Upload કરો</button>
+    <div class="muted small">વિડિયો અપલોડ માટે Firebase Storage ચાલુ હોવું જરૂરી છે.</div>
+  </section>
+  <section class="card">
+    <div class="tabs"><button id="feedTab">રીલ્સ ફીડ</button><button id="refreshBtn" class="ghost">Refresh</button></div>
+    <div id="feed"><p class="muted">હજુ કોઈ public video નથી. Login કર્યા પછી પહેલી Reel અપલોડ કરો.</p></div>
+  </section>
+  <section class="card"><b>JHALAK વિશે</b><p class="muted small">આ પ્રારંભિક ટેસ્ટ વર્ઝન છે. Login, Firestore feed અને Storage upload તમારા Firebase project સાથે જોડાય છે. Public launch પહેલાં Rules અને privacy settings ચકાસો.</p></section>
+</main>
+
+<footer style="text-align:center;padding:22px 12px 30px;color:#aaa7bb;font:13px system-ui,sans-serif;border-top:1px solid #29293a;margin-top:22px">
+  <span>Developed by <strong style="color:#c4a7ff">Bharat Jadav</strong></span>
+</footer>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-app.js";
+import { getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-auth.js";
+import { getFirestore, collection, addDoc, getDocs, query, where, orderBy, serverTimestamp, doc, setDoc } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js";
+import { getStorage, ref, uploadBytesResumable, getDownloadURL } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-storage.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyABIyVb03VxbzkoaxulIXuWU6Y5wdDt868",
+  authDomain: "jhalak-6d737.firebaseapp.com",
+  projectId: "jhalak-6d737",
+  storageBucket: "jhalak-6d737.firebasestorage.app",
+  messagingSenderId: "117193152374",
+  appId: "1:117193152374:web:3fd062fae116be67c44c57",
+  measurementId: "G-DY2Z8W5GLM"
+};
+const app=initializeApp(firebaseConfig), auth=getAuth(app), db=getFirestore(app), storage=getStorage(app);
+const $=id=>document.getElementById(id);
+let currentUser=null;
+function say(s){$("status").textContent=s}
+$("signIn").onclick=async()=>{try{await signInWithPopup(auth,new GoogleAuthProvider())}catch(e){say("Login error: "+e.message)}};
+$("signOut").onclick=()=>signOut(auth);
+onAuthStateChanged(auth,async user=>{
+ currentUser=user;
+ $("signIn").classList.toggle("hidden",!!user);$("signOut").classList.toggle("hidden",!user);
+ $("account").classList.toggle("hidden",!user);$("uploadCard").classList.toggle("hidden",!user);
+ if(user){
+  $("displayName").textContent=user.displayName||"JHALAK User";$("email").textContent=user.email||"";
+  $("avatar").textContent=(user.displayName||"J").slice(0,1).toUpperCase();
+  try{await setDoc(doc(db,"users",user.uid),{username:(user.email||"user").split("@")[0],displayName:user.displayName||"JHALAK User",photoURL:user.photoURL||"",email:user.email||"",updatedAt:serverTimestamp()},{merge:true});}catch(e){say("Profile save: "+e.message)}
+  say("Login સફળ થયું. JHALAK માં સ્વાગત છે!");
+ }else say("JHALAK માં આપનું સ્વાગત છે. Reel જોવા માટે feed ખોલો; upload માટે login કરો.");
+ loadFeed();
+});
+async function loadFeed(){
+ try{
+  const q=query(collection(db,"videos"),where("isPublic","==",true),orderBy("createdAt","desc"));
+  const snap=await getDocs(q);const feed=$("feed");feed.innerHTML="";
+  if(snap.empty){feed.innerHTML='<p class="muted">હજુ public videos નથી. Login કરીને પહેલી Reel અપલોડ કરો.</p>';return;}
+  snap.forEach(d=>{
+   const v=d.data(), el=document.createElement("article");el.className="post";
+   const title=document.createElement("p");title.textContent=v.caption||"JHALAK Reel";
+   const vid=document.createElement("video");vid.controls=true;vid.playsInline=true;vid.preload="metadata";vid.src=v.videoUrl||"";
+   const info=document.createElement("div");info.className="muted small";info.textContent="♥ "+(v.likesCount||0)+"  ·  "+(v.commentsCount||0)+" comments";
+   el.append(title,vid,info);feed.append(el);
+  });
+ }catch(e){$("feed").innerHTML='<p class="muted">Feed load ન થયું: '+e.message+'<br>Firestore Rules અથવા index તપાસો.</p>'}
+}
+$("refreshBtn").onclick=loadFeed;
+$("uploadBtn").onclick=async()=>{
+ const file=$("videoFile").files[0], caption=$("caption").value.trim();
+ if(!currentUser){say("પહેલાં Google Login કરો.");return}
+ if(!file){say("પહેલાં video પસંદ કરો.");return}
+ if(!file.type.startsWith("video/")){say("કૃપા કરીને video file પસંદ કરો.");return}
+ if(file.size>100*1024*1024){say("આ ટેસ્ટમાં 100 MB સુધીનો video પસંદ કરો.");return}
+ $("uploadBtn").disabled=true;say("Video upload થઈ રહ્યો છે…");
+ try{
+  const safeName=file.name.replace(/[^a-zA-Z0-9._-]/g,"_");
+  const path=`videos/${currentUser.uid}/${Date.now()}_${safeName}`;
+  const task=uploadBytesResumable(ref(storage,path),file,{contentType:file.type});
+  await new Promise((resolve,reject)=>task.on("state_changed",s=>say("Upload: "+Math.round(s.bytesTransferred/s.totalBytes*100)+"%"),reject,resolve));
+  const videoUrl=await getDownloadURL(task.snapshot.ref);
+  await addDoc(collection(db,"videos"),{userId:currentUser.uid,videoUrl,storagePath:path,caption,likesCount:0,commentsCount:0,isPublic:true,createdAt:serverTimestamp()});
+  $("videoFile").value="";$("caption").value="";say("તમારી Reel સફળતાપૂર્વક અપલોડ થઈ!");await loadFeed();
+ }catch(e){say("Upload error: "+e.message+"\nFirebase Storage ચાલુ છે અને Rules લાગુ છે તેની ખાતરી કરો.")}
+ finally{$("uploadBtn").disabled=false}
+};
+</script>
+</body></html>
